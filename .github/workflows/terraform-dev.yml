@@ -17,9 +17,10 @@ permissions:
   contents: read
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-east-1
   TF_WORKING_DIR: dev
-
+  
 jobs:
   plan:
     if: github.event_name == 'pull_request'
