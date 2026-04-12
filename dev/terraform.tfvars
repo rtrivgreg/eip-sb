@@ -1,4 +1,4 @@
-enabled       = false
+enabled       = true
 aws_region    = "us-east-1"  # or region = "us-east-1" if your variable is named region
 
 vpc_id              = "vpc-0c4f804e905f41635"
