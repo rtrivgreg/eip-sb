@@ -44,4 +44,16 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars -out=tfplan
+        run: |
+          terraform plan -no-color -input=false -var-file=terraform.tfvars -out=tfplan
+          terraform show tfplan > plan-output.txt
+
+      - name: Upload Terraform artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-weekly-plan
+          path: |
+            ${{ env.TF_WORKING_DIR }}/tfplan
+            ${{ env.TF_WORKING_DIR }}/plan-output.txt
+          if-no-files-found: error
+          retention-days: 7
