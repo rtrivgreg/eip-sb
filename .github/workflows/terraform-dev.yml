@@ -70,10 +70,10 @@ jobs:
         with:
           terraform_version: "1.14.8"
 
-      - name: Terraform Init
+      - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -no-color
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -no-color -auto-approve -input=false
+        run: terraform apply -no-color -auto-approve -input=false -var-file=terraform.tfvars
