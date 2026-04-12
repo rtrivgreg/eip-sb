@@ -8,7 +8,7 @@
 
 # Local variable files
 # *.tfvars
-*.tfvars.json
+# *.tfvars.json
 
 # macOS junk
 .DS_Store
