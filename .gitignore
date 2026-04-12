@@ -7,7 +7,7 @@
 *.tfstate.backup
 
 # Local variable files
-*.tfvars
+# *.tfvars
 *.tfvars.json
 
 # macOS junk
