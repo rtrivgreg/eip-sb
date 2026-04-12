@@ -1,5 +1,5 @@
 enabled       = false
-aws_region    = "us-east-1"  # or region = "us-east-1" if your variable is named region
+aws_region    = "us-east-1"  # or region = "us-east-1" if      your variable is named region
 
 vpc_id              = "vpc-0c4f804e905f41635"
 service_name        = "com.amazonaws.us-east-1.ec2messages"
