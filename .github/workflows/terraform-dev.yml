@@ -51,7 +51,7 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -no-color -input=false
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars
 
   apply:
     if: github.event_name == 'push' && github.ref == 'refs/heads/clean-main'
@@ -69,6 +69,10 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.14.8"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -no-color -reconfigure
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
