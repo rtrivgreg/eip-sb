@@ -45,6 +45,42 @@ jobs:
           echo "enabled=${{ inputs.enabled }}"
           echo "source=${{ inputs.source }}"
 
+  manual-terraform:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -no-color -reconfigure
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Write tfvars from dispatch input
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          cat > dispatch.auto.tfvars <<EOF
+          enabled = ${{ inputs.enabled }}
+          EOF
+
+      - name: Terraform Plan (manual)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars -var-file=dispatch.auto.tfvars
+   
   plan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
