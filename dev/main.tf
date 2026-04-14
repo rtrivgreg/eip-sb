@@ -12,9 +12,6 @@ module "ec2messages_endpoint" {
 }
 
 output "debug_root_enabled" {
-  description = "RG Debug: var.enabled at root and module input"
-  value = {
-    root_var_enabled  = var.enabled
-    module_input      = module.ec2messages_endpoint_enabled
-  }
+  description = "Debug: enabled at root"
+  value       = var.enabled
 }
