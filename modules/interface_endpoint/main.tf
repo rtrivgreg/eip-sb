@@ -18,6 +18,6 @@ resource "aws_vpc_endpoint" "this" {
 }
 
 output "enabled" {
-  description = "Debug: enabled flag inside interface_endpoint module"
+  description = "RG Debug: enabled flag inside interface_endpoint module"
   value       = var.enabled
 }
