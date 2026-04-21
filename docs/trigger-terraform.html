@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Trigger Terraform Workflow</title>
+  </head>
+  <body>
+    <h1>Trigger Terraform Dev</h1>
+
+    abel>
+      <input type="checkbox" id="enabled-checkbox" checked />
+      Enabled
+    </label>
+
+    <button id="trigger-btn">Run Terraform Plan+Apply</button>
+
+    <pre id="result" style="margin-top:1rem; white-space:pre-wrap;"></pre>
+
+    <script>
+      // 1) Fill these in:
+      const OWNER = 'your-org-or-user';
+      const REPO  = 'your-repo-name';
+      const WORKFLOW_FILE = 'terraform-dev.yml'; // your workflow filename
+      const REF   = 'clean-main'; // branch where the workflow lives
+
+      async function triggerWorkflow(enabled) {
+        // 2) For baby steps: prompt for the PAT on each use
+        const token = prompt('GitHub token (with workflow permission):');
+        if (!token) return;
+
+        const resEl = document.getElementById('result');
+        resEl.textContent = 'Triggering workflow...';
+
+        const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
+
+        const body = {
+          ref: REF,
+          inputs: {
+            enabled: enabled,
+            source: 'html-button'
+          }
+        };
+
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': `Bearer ${token}`,
+              'X-GitHub-Api-Version': '2022-11-28'
+            },
+            body: JSON.stringify(body)
+          });
+
+          if (resp.status === 204) {
+            resEl.textContent = 'Workflow triggered successfully.';
+          } else {
+            const text = await resp.text();
+            resEl.textContent = `Error ${resp.status}:\n${text}`;
+          }
+        } catch (err) {
+          resEl.textContent = `Request failed:\n${err}`;
+        }
+      }
+
+      document
+        .getElementById('trigger-btn')
+        .addEventListener('click', () => {
+          const enabled = document.getElementById('enabled-checkbox').checked;
+          triggerWorkflow(enabled);
+        });
+    </script>
+  </body>
+</html>
