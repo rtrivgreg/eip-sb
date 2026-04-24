@@ -1,0 +1,110 @@
+name: Terraform POC
+
+on:
+  workflow_dispatch:
+    inputs:
+      do_apply:
+        description: "Apply POC changes"
+        required: true
+        type: boolean
+        default: false
+      source:
+        description: "Who triggered this"
+        required: false
+        type: string
+        default: "browser-button"
+  pull_request:
+    branches: [ clean-main ]
+    paths:
+      - "poc/**"
+      - "modules/**"
+      - ".github/workflows/terraform-poc.yml"
+  push:
+    branches: [ clean-main ]
+    paths:
+      - "poc/**"
+      - "modules/**"
+      - ".github/workflows/terraform-poc.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  AWS_REGION: us-east-1
+  TF_WORKING_DIR: poc
+
+jobs:
+  dispatch-test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo trigger inputs
+        run: |
+          echo "do_apply=${{ inputs.do_apply }}"
+          echo "source=${{ inputs.source }}"
+
+  plan:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -no-color -reconfigure
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/clean-main' || github.event_name == 'workflow_dispatch' && inputs.do_apply == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -no-color -reconfigure
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -no-color -auto-approve -input=false -var-file=terraform.tfvars
