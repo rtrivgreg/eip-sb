@@ -78,7 +78,12 @@ jobs:
         run: terraform plan -no-color -input=false -var-file=terraform.tfvars
 
   apply:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/clean-main' || github.event_name == 'workflow_dispatch' && inputs.do_apply == true
+    needs: plan
+    # Manual apply only, and only if plan succeeded
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      inputs.do_apply == true &&
+      needs.plan.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,10 +105,6 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -no-color -reconfigure
-
-      - name: Terraform Plan
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
