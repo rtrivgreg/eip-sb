@@ -1,6 +1,6 @@
 module "poc_vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"  # pin a major version[web:199][web:387]
+  version = "~> 5.8"  # pin a major version[web:199][web:387]
 
   name = "rg-poc-vpc"
   cidr = "10.10.0.0/16"
