@@ -46,12 +46,6 @@ variable "default_tags" {
   }
 }
 
-variable "aws_region" {
-  description = "AWS region for resources"
-  type        = string
-  default     = "us-east-1"
-}
-
 variable "vpc_profile" {
   description = "Curated VPC profile to deploy"
   type        = string
