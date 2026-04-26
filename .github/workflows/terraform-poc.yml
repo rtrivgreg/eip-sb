@@ -12,6 +12,15 @@ on:
           - apply
           - destroy
         default: plan
+      vpc_profile:
+        description: "Curated VPC profile"
+        required: true
+        type: choice
+        options:
+          - minimal
+          - development
+          - production
+        default: development
       source:
         description: "Who triggered this"
         required: false
@@ -47,11 +56,14 @@ jobs:
       - name: Echo trigger inputs
         run: |
           echo "action=${{ inputs.action }}"
+          echo "vpc_profile=${{ inputs.vpc_profile }}"
           echo "source=${{ inputs.source }}"
 
   plan:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_vpc_profile: ${{ github.event_name == 'workflow_dispatch' && inputs.vpc_profile || 'development' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +105,8 @@ jobs:
       inputs.action == 'apply' &&
       needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
     steps:
       - uses: actions/checkout@v4
 
@@ -125,6 +139,8 @@ jobs:
       inputs.action == 'destroy' &&
       needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
     steps:
       - uses: actions/checkout@v4
 
