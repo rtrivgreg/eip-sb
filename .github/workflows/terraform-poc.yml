@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "What do you want Terraform to do?"
+        description: "Terraform action"
         required: true
         type: choice
         options:
@@ -26,18 +26,6 @@ on:
         required: false
         type: string
         default: "browser-button"
-  pull_request:
-    branches: [ clean-main ]
-    paths:
-      - "poc/**"
-      - "modules/**"
-      - ".github/workflows/terraform-poc.yml"
-  push:
-    branches: [ clean-main ]
-    paths:
-      - "poc/**"
-      - "modules/**"
-      - ".github/workflows/terraform-poc.yml"
 
 permissions:
   id-token: write
@@ -47,30 +35,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-east-1
   TF_WORKING_DIR: poc
+  TF_STATE_BUCKET: rg-tf-state-dev
+  TF_LOCK_TABLE: rg-tf-locks-dev
+  TF_ROLE_ARN: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
 
 jobs:
-  dispatch-test:
-    if: github.event_name == 'workflow_dispatch'
+  plan:
+    if: github.event_name == 'workflow_dispatch' && (inputs.action == 'plan' || inputs.action == 'apply' || inputs.action == 'destroy')
     runs-on: ubuntu-latest
+    outputs:
+      backend_key: ${{ steps.backend_key.outputs.value }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Echo trigger inputs
         run: |
           echo "action=${{ inputs.action }}"
           echo "vpc_profile=${{ inputs.vpc_profile }}"
           echo "source=${{ inputs.source }}"
 
-  plan:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    env:
-      TF_VAR_vpc_profile: ${{ github.event_name == 'workflow_dispatch' && inputs.vpc_profile || 'development' }}
-    steps:
-      - uses: actions/checkout@v4
+      - name: Set backend key
+        id: backend_key
+        run: echo "value=vpc-endpoints/poc/${{ inputs.vpc_profile }}/terraform.tfstate" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          role-to-assume: ${{ env.TF_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify caller identity
@@ -83,16 +74,25 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -no-color -reconfigure
+        run: |
+          terraform init -no-color -reconfigure \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ steps.backend_key.outputs.value }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}"
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
         run: terraform validate -no-color
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.action }}" = "destroy" ]; then
+          if [ "${{ inputs.action }}" = "destroy" ]; then
             terraform plan -destroy -no-color -input=false -var-file=terraform.tfvars
           else
             terraform plan -no-color -input=false -var-file=terraform.tfvars
@@ -100,20 +100,15 @@ jobs:
 
   apply:
     needs: plan
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      inputs.action == 'apply' &&
-      needs.plan.result == 'success'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply' && needs.plan.result == 'success'
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          role-to-assume: ${{ env.TF_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify caller identity
@@ -126,28 +121,30 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -no-color -reconfigure
+        run: |
+          terraform init -no-color -reconfigure \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ needs.plan.outputs.backend_key }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}"
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
         run: terraform apply -no-color -auto-approve -input=false -var-file=terraform.tfvars
 
   destroy:
     needs: plan
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      inputs.action == 'destroy' &&
-      needs.plan.result == 'success'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && needs.plan.result == 'success'
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::418295699841:role/GitHubActionsTerraformDev
+          role-to-assume: ${{ env.TF_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify caller identity
@@ -160,8 +157,15 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -no-color -reconfigure
+        run: |
+          terraform init -no-color -reconfigure \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ needs.plan.outputs.backend_key }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}"
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_vpc_profile: ${{ inputs.vpc_profile }}
         run: terraform destroy -no-color -auto-approve -input=false -var-file=terraform.tfvars
