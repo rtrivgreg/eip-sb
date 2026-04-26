@@ -55,7 +55,7 @@ locals {
       enable_dns_support           = true
       enable_dns_hostnames         = true
       map_public_ip_on_launch      = false
-      create_database_subnet_group = true
+      create_database_subnet_group = false
       enable_s3_endpoint           = true
       enable_dynamodb_endpoint     = true
     }
