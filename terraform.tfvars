@@ -1,4 +1,4 @@
-enabled             = false
+enabled             = true
 region              = "us-east-1"
 vpc_id              = "vpc-0c4f804e905f41635"
 subnet_ids          = ["subnet-0e2edd5fa0e3907f0"]
