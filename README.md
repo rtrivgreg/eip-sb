@@ -1,134 +1,248 @@
 # vpce-ec2messages
 
-A proof-of-concept repository that uses GitHub Actions and Terraform to deploy a curated AWS VPC shape based on a small set of operator-friendly profiles.
+A Terraform and GitHub Actions proof of concept for two closely related AWS networking goals:
 
-The design goal is simple: keep the GitHub Actions manual trigger UI easy to use while letting Terraform decide the actual topology. Instead of exposing many low-level networking toggles, the workflow accepts two high-level choices:
+1. building curated VPC topologies from a small set of operator-friendly profiles, and
+2. creating interface VPC endpoints for private AWS service connectivity, especially `ec2messages`.
+
+The repository started from the interface-endpoint use case and later expanded into a broader profile-driven VPC workflow. The result is a repo that documents both the **network foundation** and the **private service access pattern** that motivated it.
+
+## Why this repo exists
+
+The original motivation was an interface VPC endpoint for `ec2messages`, which AWS documents as part of the Systems Manager messaging API path used by managed instances [1]. AWS also documents interface VPC endpoints as the private connectivity mechanism for AWS services that expose endpoint ENIs in subnets with attached security groups and optional private DNS [2][3].
+
+As the proof of concept evolved, the repository grew into a cleaner profile-based VPC workflow so that different subnet, NAT, DNS, and endpoint patterns could be tested with a simple manual GitHub Actions interface [4][5].
+
+## Repository scope
+
+This repository now covers two complementary infrastructure paths:
+
+- **Profile-based VPC workflow** in `poc/`, driven by GitHub Actions and Terraform locals.
+- **Reusable interface endpoint module** in `modules/interface_endpoint`, used for `ec2messages` and adaptable to similar services [6][7].
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Repository] --> B[Profile-based VPC path]
+    A --> C[Interface endpoint path]
+
+    B --> B1[GitHub Actions workflow_dispatch]
+    B1 --> B2[action + vpc_profile + source]
+    B2 --> B3[Terraform in poc/]
+    B3 --> B4[terraform-aws-modules/vpc/aws]
+    B3 --> B5[S3 and DynamoDB gateway endpoints]
+
+    C --> C1[Root module]
+    C1 --> C2[module ec2messages_endpoint]
+    C2 --> C3[modules/interface_endpoint]
+    C3 --> C4[aws_vpc_endpoint Interface]
+```
+
+## Profile-based VPC workflow
+
+The GitHub Actions workflow accepts three manual inputs:
 
 - `action = plan | apply | destroy`
 - `vpc_profile = minimal | development | production`
+- `source` as optional trigger metadata
 
-Terraform locals translate the selected profile into concrete VPC module inputs such as AZ count, subnet layout, NAT behavior, DNS settings, and optional endpoint creation.
+The workflow exports `TF_VAR_vpc_profile`, computes a profile-specific backend key, initializes Terraform in `poc/`, validates the configuration, and always performs a plan phase before any apply or destroy action [4][5].
 
-## Purpose
+### Workflow sequencing
 
-This repository demonstrates a profile-based VPC deployment workflow built around these ideas:
+```mermaid
+sequenceDiagram
+    actor User as Operator
+    participant GH as GitHub Actions
+    participant PLAN as plan job
+    participant APPLY as apply job
+    participant DESTROY as destroy job
 
-- GitHub Actions collects only operator intent.
-- Terraform owns topology translation.
-- The implementation remains opinionated and maintainable.
-- The POC backend and state path remain isolated from other environments.
+    User->>GH: Run workflow_dispatch
+    User->>GH: Select action, vpc_profile, source
+    GH->>PLAN: Start plan job
+    PLAN->>PLAN: Echo inputs
+    PLAN->>PLAN: Compute backend key
+    PLAN->>PLAN: terraform init
+    PLAN->>PLAN: terraform validate
+    PLAN->>PLAN: terraform plan or terraform plan -destroy
+    alt action == apply
+        GH->>APPLY: needs successful plan
+        APPLY->>APPLY: terraform init
+        APPLY->>APPLY: terraform apply
+    else action == destroy
+        GH->>DESTROY: needs successful plan
+        DESTROY->>DESTROY: terraform init
+        DESTROY->>DESTROY: terraform destroy
+    else action == plan
+        GH-->>User: End after plan
+    end
+```
 
-The repository also models optional endpoint behavior as part of the selected profile so the CI workflow does not need to know networking details.
+### State isolation
 
-## What the profiles do
+The workflow dynamically sets the backend key to:
 
-| Profile | Topology | NAT | Database subnets | Endpoints | Intended use |
-|---------|----------|-----|------------------|-----------|--------------|
-| `minimal` | 1 AZ, public subnets only | Disabled | No | None | Cheapest and fastest test VPC |
-| `development` | 2 AZs, public + private subnets | Single NAT gateway | No | S3 gateway endpoint | Practical day-to-day developer VPC |
-| `production` | 3 AZs, public + private + database subnets | Single NAT gateway for POC cost control | Yes, but no DB subnet group resource | S3 gateway endpoint, optional or enabled DynamoDB gateway endpoint | Production-style reference VPC |
+```text
+vpc-endpoints/poc/<vpc_profile>/terraform.tfstate
+```
 
-## How it works
+This keeps Terraform state isolated per VPC profile.
 
-At a high level, the workflow is:
+## VPC profiles
 
-1. An operator manually runs the GitHub Actions workflow.
-2. The operator selects an `action` and `vpc_profile`.
-3. GitHub Actions passes `vpc_profile` into Terraform through `TF_VAR_vpc_profile`.
-4. Terraform validates the profile value.
-5. Terraform locals map that profile to a curated network shape.
-6. The VPC module and any endpoint resources are created from those derived values.
+The active profile is selected from a Terraform local map and translated into name, CIDR, AZ count, subnet flags, NAT settings, DNS settings, and endpoint enablement. Terraform locals are intended for reusable internal values and expression reuse, which makes them a good fit for this translation layer [8][9].
 
-This keeps the workflow UI simple and keeps topology logic inside Terraform, where it is easier to test, reason about, and maintain.
+Terraform uses `cidrsubnet(prefix, newbits, netnum)` to derive subnet CIDRs from each profile CIDR, which allows the subnet structure to be generated programmatically instead of hardcoded [10].
 
-## Expected Terraform design
+### Implemented profile matrix
 
-The Terraform implementation is expected to include:
+| Profile | CIDR | AZs | Public | Private | Database | NAT | DNS | Endpoint behavior |
+|---------|------|-----|--------|---------|----------|-----|-----|-------------------|
+| `minimal` | `10.10.0.0/16` | 1 | Yes | No | No | Disabled | Enabled | No endpoints |
+| `development` | `10.20.0.0/16` | 2 | Yes | Yes | No | Single NAT gateway | Enabled | S3 gateway endpoint |
+| `production` | `10.30.0.0/16` | 3 | Yes | Yes | Yes | NAT enabled with `single_nat_gateway = false` | Enabled | S3 and DynamoDB gateway endpoints |
 
-- `poc/variables.tf`  
-  Defines `vpc_profile` and validates allowed values.
+### Profile translation flow
 
-- `poc/locals.tf`  
-  Maps profile names to derived configuration such as:
-  - number of AZs
-  - selected AZ names
-  - public/private/database subnet CIDRs
-  - NAT settings
-  - DNS settings
-  - endpoint enablement
+```mermaid
+flowchart LR
+    V[var.vpc_profile] --> L[local.vpc_profiles]
+    L --> P[local.profile]
+    P --> Z[local.azs from available_azs]
+    P --> S1[public_subnets]
+    P --> S2[private_subnets]
+    P --> S3[database_subnets]
+    P --> E1[enable_s3_endpoint]
+    P --> E2[enable_dynamodb_endpoint]
+    Z --> S1
+    Z --> S2
+    Z --> S3
+    S1 --> M[module poc_vpc]
+    S2 --> M
+    S3 --> M
+```
 
-- `poc/vpc.tf`  
-  Passes derived values into the `terraform-aws-modules/vpc/aws` module.
+## VPC module implementation
 
-- Optional endpoint file such as `poc/endpoints.tf`  
-  Creates profile-driven VPC endpoints if they are managed outside the VPC module.
+The file `poc/vpc.tf` calls `terraform-aws-modules/vpc/aws` version `~> 5.0` and drives it directly from the derived locals. That includes the VPC name, VPC CIDR, AZ list, public/private/database subnet lists, NAT settings, DNS settings, `map_public_ip_on_launch`, and `create_database_subnet_group` [11][12].
 
-- `.github/workflows/terraform-poc.yml`  
-  Exposes the simplified manual inputs and preserves plan-before-apply/destroy sequencing.
+The implementation also sets:
 
-## Why this design
+- `manage_default_network_acl = false`
+- `manage_default_security_group = false`
 
-This repository intentionally favors readability and operator safety over unlimited configurability.
+That is a sensible scope choice for a POC because it avoids taking over AWS default constructs unnecessarily [13][14].
 
-Benefits of this pattern:
+## Gateway endpoints
 
-- Fewer workflow inputs.
-- Lower chance of invalid infrastructure combinations.
-- Easier review of networking behavior.
-- Cleaner separation between CI orchestration and infrastructure logic.
+The profile-based VPC path creates S3 and DynamoDB endpoints as separate `aws_vpc_endpoint` resources rather than embedding them inside the VPC module.
 
-Tradeoffs:
+Both endpoints are created as **Gateway** endpoints, and each is conditionally enabled through profile flags. AWS documents gateway endpoints for S3 and DynamoDB as route-table-associated private access paths that avoid the need for internet gateway or NAT traffic for those services [15][16][17].
 
-- Less flexibility than exposing every raw module variable.
-- Profile changes require code updates rather than ad hoc UI overrides.
-- The production profile is intentionally simplified for POC use, especially around NAT cost and database subnet group behavior.
+The implementation associates these gateway endpoints with the concatenated public and private route table ID lists from the VPC module, which means both route table classes receive the gateway endpoint routes [16][17].
 
-## Production profile note
+## Interface endpoint module
 
-The `production` profile keeps database subnets to model a more realistic multi-tier network but does **not** create an RDS DB subnet group. This avoids extra RDS-specific permissions and API behavior while still preserving the subnet layout for documentation and future extension.
+The repository also contains a local reusable module at `modules/interface_endpoint`.
 
-## Running the workflow
+A root module calls it like this for `ec2messages`:
 
-From the GitHub Actions manual dispatch screen:
+```hcl
+module "ec2messages_endpoint" {
+  source = "../modules/interface_endpoint"
 
-1. Choose `action`:
-   - `plan`
-   - `apply`
-   - `destroy`
+  enabled             = var.enabled
+  name                = "ec2messages-interface-endpoint"
+  vpc_id              = var.vpc_id
+  service_name        = var.service_name
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = var.security_group_ids
+  private_dns_enabled = var.private_dns_enabled
+  tags                = var.default_tags
+}
+```
 
-2. Choose `vpc_profile`:
-   - `minimal`
-   - `development`
-   - `production`
+Terraform module blocks are the standard mechanism for packaging reusable infrastructure logic [18][6].
 
-3. Run the workflow.
+### Interface endpoint behavior
 
-The intended sequencing is:
+Inside the child module, the endpoint resource is:
 
-- `apply` depends on a successful `plan`
-- `destroy` depends on a successful `plan`
+- `aws_vpc_endpoint.this`
+- conditionally created using `count = var.enabled ? 1 : 0`
+- configured as `vpc_endpoint_type = "Interface"`
+- attached to explicit subnets and security groups
+- optionally configured with private DNS
+- tagged with merged caller-provided tags and a baseline `Name` / `ManagedBy` pair
 
-That sequencing helps confirm the selected profile before infrastructure changes are made.
+This matches AWS guidance for interface endpoints, which centers on one subnet per Availability Zone, attached security groups, and private DNS behavior [2][3][7].
 
-## State isolation
+### Interface endpoint outputs
 
-This repository is intended to keep its POC backend configuration and state path isolated from other environments. That makes experimentation safer and reduces the chance of overlapping state operations with unrelated Terraform deployments.
+The child module exposes:
 
-## Repository guide
+- `id`
+- `dns_entry`
+- `network_interface_ids`
 
-See the docs directory for deeper explanation:
+Terraform outputs are intended to expose useful infrastructure values from a module or root configuration for inspection and downstream use [19][20].
 
-- `docs/architecture.md` — system design and control flow
-- `docs/workflow.md` — GitHub Actions behavior and sequencing
-- `docs/profiles.md` — exact profile behavior and tradeoffs
-- `docs/repository-map.md` — file-by-file orientation
+## Provider and versions
 
-## Future enhancements
+The repo currently pins:
 
-Potential next improvements:
+- Terraform CLI: `= 1.14.8`
+- AWS provider: `~> 5.0`
+- VPC module: `~> 5.0`
 
-- Add a small architecture diagram.
-- Add example `terraform plan` excerpts for each profile.
-- Add validation tests for profile-to-topology mappings.
-- Add cost notes per profile.
-- Optionally add interface endpoints for Systems Manager-related private access scenarios if the repository evolves in that direction.
+The GitHub Actions workflow also installs Terraform `1.14.8`, which keeps local configuration and CI aligned. Terraform version constraints and provider requirements are the standard mechanism for controlling compatibility and reproducibility [21][22].
+
+The AWS provider is configured with:
+
+- `region = var.aws_region`
+- provider-level `default_tags`
+
+The AWS provider supports `default_tags`, which helps enforce a consistent tagging baseline across resources [23][24].
+
+## Outputs
+
+The current root outputs for the profile-based VPC path are:
+
+- `poc_vpc_id`
+- `poc_vpc_profile`
+- `poc_public_subnets`
+- `poc_private_subnets`
+- `poc_database_subnets`
+
+These outputs provide a quick way to inspect the deployed topology after apply [19][20].
+
+## Repository layout
+
+```text
+.github/workflows/terraform-poc.yml
+poc/
+  locals.tf
+  vpc.tf
+  endpoints.tf
+  outputs.tf
+  providers.tf
+  variables.tf
+  versions.tf
+modules/
+  interface_endpoint/
+    main.tf
+    variables.tf
+    outputs.tf
+```
+
+## Recommended next improvements
+
+A few small improvements would make the repo even easier to maintain:
+
+- add descriptions to every output block
+- remove temporary CI test comments from the Terraform version file
+- create separate example `terraform.tfvars` files for the VPC-profile path and the interface-endpoint path
+- document which variables belong to the profile-based root module versus the interface-endpoint root module
+- optionally add a short architecture decision note explaining why S3/DynamoDB use gateway endpoints while `ec2messages` uses an interface endpoint
