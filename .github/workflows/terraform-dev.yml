@@ -1,4 +1,4 @@
-name: Terraform Dev
+name: EIP Dev
 
 on:
   schedule:
