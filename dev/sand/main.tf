@@ -1,9 +1,9 @@
 resource "aws_instance" "example" {  
  
   ami                   = "ami-0c55b159cbfafe1f"  # needs for baseline
-  instancetype          = "t3.nano"
+  instance_type          = "t3.nano"
   subnet_id             = "subnet-0e2edd5fa0e3907f0"
-  security_groups       = "sg-02c3be99d2bc862ca"
+  security_groups       = ["sg-02c3be99d2bc862ca"]
   key_name              = "TF3"
 
   #vpcsecuritygroupids = var.securitygroups  
