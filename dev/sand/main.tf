@@ -6,7 +6,7 @@ resource "aws_instance" "example" {
   #security_groups       = ["sg-02c3be99d2bc862ca"]
   vpc_security_group_ids = ["sg-02c3be99d2bc862ca"]
   key_name              = "TF3"
-
+ 
   #vpcsecuritygroupids = var.securitygroups  
   #associatepublicipaddress = var.publicip != "" ? true : false  
 }
