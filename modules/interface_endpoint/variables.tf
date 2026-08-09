@@ -1,3 +1,14 @@
+# Instance Type begin
+variable "instance_id" {  
+  type = string  
+  description = "The ID of the EC2 instance."  
+}  
+variable "instance_type" {  
+  type = string  
+  description = "The desired instance type, e.g., t2.micro."  
+}  
+#Instance Type end
+
 variable "enabled" {
   type        = bool
   description = "Whether to create/manage the endpoint"

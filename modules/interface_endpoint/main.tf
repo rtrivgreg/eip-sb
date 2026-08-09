@@ -1,5 +1,5 @@
 #resource "aws_vpc_endpoint" "this" {
-#  count = var.enabled ? 1 : 0
+  count = var.enabled ? "t3.medium" : "t3.nano"
 
   #vpc_id              = var.vpc_id
   #service_name        = var.service_name
@@ -17,45 +17,9 @@
   #)
 #}
 
-#output "enabled" {
-#  description = "RG Debug: enabled flag inside interface_endpoint module"
-#  value       = var.enabled
-#}
-# =========================================================
-# 1. THE ELASTIC IP LIFECYCLE (The IP Address Itself)
-# =========================================================
-
-# Tell Terraform to import your existing AWS Elastic IP allocation
-import {
-  to = aws_eip.endpoint_static_ip
-  id = "eipalloc-0123456789abcdef0" # <-- Replace with your real EIP Allocation ID
-}
-
-# Define the IP resource so Terraform can create/delete it
-resource "aws_eip" "endpoint_static_ip" {
-  domain = "vpc" # Confirms this IP belongs inside a VPC network context
-
-  # Optional: You can manage your AWS tags right here
-  tags = {
-    Environment = "dev"
-    ManagedBy   = "Terraform"
-  }
-}
-
-# =========================================================
-# 2. THE ASSOCIATION (The Link Between IP and Interface)
-# =========================================================
-
-# Tell Terraform to import your existing mapping link
-import {
-  to = aws_eip_association.vpc_endpoint_eip
-  id = "eipassoc-047f58c615db714ef"
-}
-
-# Define the connection link using a dynamic dependency reference
-resource "aws_eip_association" "vpc_endpoint_eip" {
-  network_interface_id = "eni-0ec9e9b0df56329de"
-  
-  # This chains the association directly to the IP managed above
-  allocation_id        = aws_eip.endpoint_static_ip.id
+resource "aws_instance" "example" {  
+  instancetype          = var.instancetype  #nano
+  ami                    = "ami-0c55b159cbfafe1f"  
+  #vpcsecuritygroupids = var.securitygroups  
+  #associatepublicipaddress = var.publicip != "" ? true : false  
 }

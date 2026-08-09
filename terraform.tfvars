@@ -1,3 +1,5 @@
+#instance_id         = 
+instance_type       = "t3.nano"
 enabled             = true
 region              = "us-east-1"
 vpc_id              = "vpc-0c4f804e905f41635"

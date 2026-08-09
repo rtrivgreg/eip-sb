@@ -1,5 +1,10 @@
 module "ec2messages_endpoint" {
   source = "../modules/interface_endpoint"
+  
+  #for instance type toggle begin
+  #instance_id         = var.instance_id
+  instance_type       = var.instance_type
+  #for instance type toggle end
 
   enabled             = var.enabled
   name                = "ec2messages-interface-endpoint"
